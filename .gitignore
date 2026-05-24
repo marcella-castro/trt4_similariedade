@@ -1,0 +1,8 @@
+venvtrt4/
+__pycache__/
+.ipynb_checkpoints/
+*.pyc
+
+data/raw/
+data/interim/*.csv
+data/interim/*.parquet

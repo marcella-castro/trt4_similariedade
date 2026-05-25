@@ -32,8 +32,6 @@ caminho = Service('/Users/Marcella/PycharmProjects/webscrapper101/chromedriver')
 # Dataframe com os processos trabalhistas
 df = pd.read_parquet('/Users/Marcella/pesquisa_insper_luciana/trt4_similariedade/data/interim/dftrt4_g1_ritoordinario.parquet')
 print(f'Total de processos a scrappear: {len(df)}')
-df = df.head()
-print(f'Total de processos a scrappear: {len(df)}')
 
 # Link base para pesquisa 
 link_base = 'https://comunica.pje.jus.br/consulta?dataDisponibilizacaoInicio=2022-12-31&dataDisponibilizacaoFim=2026-05-09&numeroProcesso='
@@ -41,15 +39,42 @@ link_base = 'https://comunica.pje.jus.br/consulta?dataDisponibilizacaoInicio=202
 # Criar o Navegador
 navegador = webdriver.Chrome(service=caminho)
 
-# listas para acumular resultados
-passivo_rows = []
-ativo_rows = []
-adv_rows = []
+# saída incremental em um único CSV
+out_dir = os.path.join('data', 'webscraping', 'trt4_rito_ord')
+os.makedirs(out_dir, exist_ok=True)
+output_csv = os.path.join(out_dir, 'df_trt4_rito_ord.csv')
+csv_columns = ['registro_tipo', 'link', 'numero_processo', 'nome', 'oab', 'polo']
+
+processados = set()
+if os.path.exists(output_csv):
+    try:
+        df_existente = pd.read_csv(output_csv, dtype={'numero_processo': str}, usecols=['numero_processo'])
+        processados = set(df_existente['numero_processo'].dropna().astype(str))
+    except Exception:
+        processados = set()
+
+
+def append_rows_to_csv(rows):
+    if not rows:
+        return
+
+    df_saida = pd.DataFrame(rows, columns=csv_columns)
+    escrever_cabecalho = not os.path.exists(output_csv) or os.path.getsize(output_csv) == 0
+    df_saida.to_csv(output_csv, mode='a', header=escrever_cabecalho, index=False)
+
+
+total_registros_salvos = 0
 
 try:
     for processo in df['numero_processo']:
-    # monta o link da busca 
-        link_da_pesquisa = link_base + str(processo)
+        processo_str = str(processo)
+
+        if processo_str in processados:
+            print(f'Processo: {processo} — já salvo, pulando')
+            continue
+
+        # monta o link da busca 
+        link_da_pesquisa = link_base + processo_str
 
         #acessa a página de pesquisa do processo
         navegador.get(link_da_pesquisa)
@@ -226,30 +251,54 @@ try:
                             oab = None
                         advogados.append({'nome': nome_adv, 'oab': oab})
 
+        registros_para_salvar = []
+
         # armazenar resultados no formato solicitado
         for p in partes:
             polo = (p.get('polo') or '').lower().strip()
             nome = (p.get('nome') or '').strip()
             if 'passivo' in polo or 'passiv' in polo:
-                passivo_rows.append({
+                registros_para_salvar.append({
+                    'registro_tipo': 'parte',
                     'link': link_da_pesquisa,
-                    'numero_processo': processo,
-                    'nome_polo_passivo': nome
+                    'numero_processo': processo_str,
+                    'nome': nome,
+                    'oab': '',
+                    'polo': 'Polo Passivo'
                 })
             elif 'ativo' in polo or 'ativ' in polo:
-                ativo_rows.append({
+                registros_para_salvar.append({
+                    'registro_tipo': 'parte',
                     'link': link_da_pesquisa,
-                    'numero_processo': processo,
-                    'nome_polo_ativo': nome
+                    'numero_processo': processo_str,
+                    'nome': nome,
+                    'oab': '',
+                    'polo': 'Polo Ativo'
                 })
 
         for a in advogados:
-            adv_rows.append({
+            registros_para_salvar.append({
+                'registro_tipo': 'advogado',
                 'link': link_da_pesquisa,
-                'numero_processo': processo,
-                'nome_advogado': a.get('nome'),
-                'oab': a.get('oab')
+                'numero_processo': processo_str,
+                'nome': a.get('nome'),
+                'oab': a.get('oab'),
+                'polo': ''
             })
+
+        if not registros_para_salvar:
+            registros_para_salvar.append({
+                'registro_tipo': 'controle',
+                'link': link_da_pesquisa,
+                'numero_processo': processo_str,
+                'nome': '',
+                'oab': '',
+                'polo': ''
+            })
+
+        append_rows_to_csv(registros_para_salvar)
+        processados.add(processo_str)
+        total_registros_salvos += len(registros_para_salvar)
 
         # prints mínimos para acompanhamento
         print(f'Processo: {processo} — partes: {len(partes)} — advs: {len(advogados)}')
@@ -259,21 +308,8 @@ finally:
     except Exception:
         pass
 
-# Criar DataFrames finais
-df_passivo = pd.DataFrame(passivo_rows, columns=['link', 'numero_processo', 'nome_polo_passivo'])
-df_ativo = pd.DataFrame(ativo_rows, columns=['link', 'numero_processo', 'nome_polo_ativo'])
-df_advogados = pd.DataFrame(adv_rows, columns=['link', 'numero_processo', 'nome_advogado', 'oab'])
-
-# garantir diretório de saída
-out_dir = os.path.join('data', 'webscraping', 'trt4_rito_ord')
-os.makedirs(out_dir, exist_ok=True)
-
-# salvar em parquet
-df_passivo.to_csv(os.path.join(out_dir, 'df_passivo_trt4_rito_ord.csv'), index=False)
-df_ativo.to_csv(os.path.join(out_dir, 'df_ativo_trt4_rito_ord.csv'), index=False)
-df_advogados.to_csv(os.path.join(out_dir, 'df_advogados_trt4_rito_ord.csv'), index=False)
-
-print('Salvos:', os.path.join(out_dir, 'df_passivo_trt4_rito_ord.csv'), os.path.join(out_dir, 'df_ativo_trt4_rito_ord.csv'), os.path.join(out_dir, 'df_advogados_trt4_rito_ord.csv'))
+print('Salvo incrementalmente em:', output_csv)
+print('Total de registros gravados nesta execução:', total_registros_salvos)
 
     
 

@@ -22,6 +22,7 @@ from PIL import Image, ImageEnhance, ImageFilter
 from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
 from unidecode import unidecode
 from bs4 import BeautifulSoup
+from tqdm import tqdm
 
 
 # ======================== CONFIGURAÇÕES ==========================================
@@ -66,10 +67,12 @@ def append_rows_to_csv(rows):
 total_registros_salvos = 0
 
 try:
-    for processo in df['numero_processo']:
+    barra_progresso = tqdm(df['numero_processo'], desc='Scraping TRT4', unit='processo')
+    for processo in barra_progresso:
         processo_str = str(processo)
 
         if processo_str in processados:
+            barra_progresso.set_postfix(status='salvo', registros=total_registros_salvos)
             print(f'Processo: {processo} — já salvo, pulando')
             continue
 
@@ -299,6 +302,12 @@ try:
         append_rows_to_csv(registros_para_salvar)
         processados.add(processo_str)
         total_registros_salvos += len(registros_para_salvar)
+        barra_progresso.set_postfix(
+            status='ok',
+            partes=len(partes),
+            advs=len(advogados),
+            registros=total_registros_salvos,
+        )
 
         # prints mínimos para acompanhamento
         print(f'Processo: {processo} — partes: {len(partes)} — advs: {len(advogados)}')

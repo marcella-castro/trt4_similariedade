@@ -3,7 +3,5 @@ __pycache__/
 .ipynb_checkpoints/
 *.pyc
 
-data/raw/
-data/interim/*.csv
-data/interim/*.parquet
-data/webscraping/
+# Ignora todos os dados brutos/intermediarios do projeto
+data/
